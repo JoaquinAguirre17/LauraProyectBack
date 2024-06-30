@@ -72,9 +72,9 @@ app.post('/turnos/reservar', async (req, res) => {
                 name: nombreCliente,
             },
             back_urls: {
-                success: `${process.env.BACKEND_URL}/turnos/confirmar`,
-                failure: `${process.env.BACKEND_URL}/turnos/error`,
-                pending: `${process.env.BACKEND_URL}/turnos/pendiente`
+                success: `${process.env.BACKEND_URL}/turnos`,
+                failure: `${process.env.BACKEND_URL}`,
+                pending: `${process.env.BACKEND_URL}`
             },
             auto_return: 'approved',
             external_reference: fechaHora // Usamos fechaHora como referencia externa
