@@ -72,7 +72,7 @@ app.post('/turnos/reservar', async (req, res) => {
                 name: nombreCliente,
             },
             back_urls: {
-                success: `${process.env.BACKEND_URL}/turnos`,
+                success: `${process.env.BACKEND_URL}`,
                 failure: `${process.env.BACKEND_URL}`,
                 pending: `${process.env.BACKEND_URL}`
             },
