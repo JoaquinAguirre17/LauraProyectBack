@@ -1,45 +1,13 @@
 const express = require('express');
 const cors = require('cors');
-const nodemailer = require('nodemailer');
 const connectToDatabase = require('./db');
 const moment = require('moment');
-const mercadopago = require('mercadopago');
 const PORT = process.env.PORT || 5000;
 require('dotenv').config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-
-mercadopago.configure({
-    access_token: process.env.MERCADOPAGO_ACCESS_TOKEN
-});
-
-// Configuración del transporter de nodemailer
-const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-    },
-});
-
-const enviarCorreoElectronico = async (cliente, fechaFormateada, tipoServicio, emailCliente) => {
-    try {
-        const mensaje = `El cliente ${cliente}, reservó el turno para el día ${fechaFormateada} y para el servicio ${tipoServicio}.`;
-        await transporter.sendMail({
-            from: process.env.EMAIL_USER,
-            to: [process.env.EMAIL_CONTACTO, emailCliente],
-            subject: 'Turno reservado exitosamente',
-            text: mensaje,
-        });
-        console.log('Correo electrónico enviado correctamente');
-    } catch (err) {
-        console.error('Error al enviar correo electrónico:', err);
-    }
-};
 
 app.post('/turnos/reservar', async (req, res) => {
     const { fechaHora, nombreCliente, tipoServicio, montoSeña, emailCliente } = req.body;
@@ -60,67 +28,19 @@ app.post('/turnos/reservar', async (req, res) => {
             throw new Error('montoSeña debe ser un número');
         }
 
-        // Crear preferencia de pago en Mercado Pago
-        let preference = {
-            items: [{
-                title: `Reserva de turno: ${tipoServicio}`,
-                quantity: 1,
-                currency_id: 'ARS',
-                unit_price: montoSeñaNumero,
-            }],
-            payer: {
-                name: nombreCliente,
-            },
-            back_urls: {
-                success: `${process.env.BACKEND_URL}`,
-                failure: `${process.env.BACKEND_URL}`,
-                pending: `${process.env.BACKEND_URL}`
-            },
-            auto_return: 'approved',
-            external_reference: fechaHora // Usamos fechaHora como referencia externa
-        };
-
-        console.log('Preferencia creada:', preference);
-
-        const response = await mercadopago.preferences.create(preference);
-
-        res.status(200).json({
-            message: 'Inicie el pago de la seña para confirmar la reserva',
-            init_point: response.body.init_point
-        });
-    } catch (err) {
-        console.error('Error al reservar el turno:', err);
-        res.status(500).json({ message: 'Error interno al procesar la solicitud' });
-    }
-});
-
-// Endpoint para confirmar el turno después del pago
-app.get('/turnos/confirmar', async (req, res) => {
-    const { payment_id, status, external_reference, nombreCliente, tipoServicio, emailCliente } = req.query;
-
-    console.log('Received parameters:', { payment_id, status, external_reference, nombreCliente, tipoServicio, emailCliente });
-
-    if (status !== 'approved') {
-        return res.status(400).json({ message: 'El pago no fue aprobado' });
-    }
-
-    try {
-        const db = await connectToDatabase();
-        const turnosCollection = db.collection('turnos');
-
         // Insertar nuevo turno
         await turnosCollection.insertOne({
-            fechaHora: external_reference,
+            fechaHora,
             nombreCliente,
             tipoServicio
         });
 
-        const fechaFormateada = moment(external_reference).format('DD-MM-YYYY HH:mm');
-        await enviarCorreoElectronico(nombreCliente, fechaFormateada, tipoServicio, emailCliente);
+        const fechaFormateada = moment(fechaHora).format('DD-MM-YYYY HH:mm');
+        console.log(`El cliente ${nombreCliente} reservó el turno para el día ${fechaFormateada} y para el servicio ${tipoServicio}.`);
 
         res.status(201).json({ message: 'Turno reservado exitosamente' });
     } catch (err) {
-        console.error('Error al confirmar el turno:', err);
+        console.error('Error al reservar el turno:', err);
         res.status(500).json({ message: 'Error interno al procesar la solicitud' });
     }
 });
