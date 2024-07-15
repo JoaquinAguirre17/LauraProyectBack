@@ -10,32 +10,34 @@ app.use(cors());
 app.use(express.json());
 
 app.post('/turnos/reservar', async (req, res) => {
-    const { fechaHora, nombreCliente, tipoServicio, montoSeña, emailCliente } = req.body;
+    const { fecha, hora, nombreCliente, tipoServicio, montoSeña, emailCliente } = req.body;
 
     try {
         const db = await connectToDatabase();
         const turnosCollection = db.collection('turnos');
 
-        // Verificar si el turno ya existe
-        const turnoExistente = await turnosCollection.findOne({ fechaHora });
+        const turnoExistente = await turnosCollection.findOne({ fecha, hora });
         if (turnoExistente) {
             return res.status(400).json({ message: 'El turno para esta fecha y hora ya está reservado' });
         }
 
-        // Convertir montoSeña a número y verificar
         const montoSeñaNumero = Number(montoSeña);
         if (isNaN(montoSeñaNumero)) {
             throw new Error('montoSeña debe ser un número');
         }
 
-        // Insertar nuevo turno
+        // Insertar el turno reservado
         await turnosCollection.insertOne({
-            fechaHora,
+            fecha,
+            hora,
             nombreCliente,
-            tipoServicio
+            tipoServicio,
+            emailCliente,
+            montoSeña: montoSeñaNumero,
+            disponible: false, // Marcamos el turno como no disponible al reservarlo
         });
 
-        const fechaFormateada = moment(fechaHora).format('DD-MM-YYYY HH:mm');
+        const fechaFormateada = moment(fecha, hora).format('DD-MM-YYYY HH:mm');
         console.log(`El cliente ${nombreCliente} reservó el turno para el día ${fechaFormateada} y para el servicio ${tipoServicio}.`);
 
         res.status(201).json({ message: 'Turno reservado exitosamente' });
@@ -56,18 +58,15 @@ app.get('/turnos/horarios-disponibles', async (req, res) => {
         const db = await connectToDatabase();
         const turnosCollection = db.collection('turnos');
 
-        const turnos = await turnosCollection.find({ fechaHora: { $regex: `^${fecha}` } }).toArray();
-        const horasReservadas = turnos.map(turno => new Date(turno.fechaHora).getHours());
+        const turnos = await turnosCollection.find({ fecha }).toArray();
+        const horariosDisponibles = obtenerHorariosDisponibles(moment(fecha).format('dddd'));
 
-        // Obtener día de la semana y horarios disponibles
-        const diaSemana = moment(fecha).format('dddd');
-        const horariosDisponibles = obtenerHorariosDisponibles(diaSemana);
-
-        // Filtrar horarios disponibles según los ya reservados
         const horariosDisponiblesFiltrados = horariosDisponibles.filter(hora => {
-            const hour = Number(hora.split(':')[0]);
-            return !horasReservadas.includes(hour);
+            const turnoReservado = turnos.find(turno => turno.hora === hora && turno.disponible === false);
+            return !turnoReservado;
         });
+
+        console.log('Horarios disponibles filtrados:', horariosDisponiblesFiltrados);
 
         res.status(200).json(horariosDisponiblesFiltrados);
     } catch (err) {
@@ -76,41 +75,18 @@ app.get('/turnos/horarios-disponibles', async (req, res) => {
     }
 });
 
-// Función para obtener los horarios disponibles para un día de la semana
 const obtenerHorariosDisponibles = (diaSemana) => {
     const horariosDisponibles = {
-        "Lunes": ["09:00", "11:30", "13:30", "17:30"],
-        "Martes": ["09:00", "11:30", "15:00", "18:00"],
-        "Miércoles": ["09:00", "11:30", "13:30", "17:30"],
-        "Jueves": ["09:00", "11:30", "15:00", "18:00"],
-        "Viernes": ["09:00", "11:30", "13:00", "15:00", "18:00"],
-        "Sábado": ["10:00", "12:30", "15:00"],
-        // Agrega más días y horarios según tu disponibilidad
+        "Monday": ["09:00", "11:30", "13:30", "17:30"],
+        "Tuesday": ["09:00", "11:30", "15:00", "18:00"],
+        "Wednesday": ["09:00", "11:30", "13:30", "17:30"],
+        "Thursday": ["09:00", "11:30", "15:00", "18:00"],
+        "Friday": ["09:00", "11:30", "13:00", "15:00", "18:00"],
+        "Saturday": ["10:00", "12:30", "15:00"],
     };
 
-    // Obtener horarios para el día de la semana dado
-    const horariosDia = horariosDisponibles[diaSemana] || [];
-
-    return horariosDia;
+    return horariosDisponibles[diaSemana] || [];
 };
-
-// Función para borrar turnos antiguos
-const borrarTurnosAntiguos = async () => {
-    try {
-        const db = await connectToDatabase();
-        const turnosCollection = db.collection('turnos');
-
-        const result = await turnosCollection.deleteMany({
-            fechaHora: { $lt: new Date(Date.now() - 24 * 60 * 60 * 1000) }
-        });
-        console.log(`Turnos borrados: ${result.deletedCount}`);
-    } catch (err) {
-        console.error('Error al borrar turnos antiguos:', err);
-    }
-};
-
-// Ejecutar la función de borrar turnos cada hora
-setInterval(borrarTurnosAntiguos, 60 * 60 * 1000); // 60 minutos * 60 segundos * 1000 milisegundos
 
 app.listen(PORT, () => {
     console.log(`Servidor escuchando en el puerto ${PORT}`);
